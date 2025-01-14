@@ -1,36 +1,16 @@
-import subprocess
-import datetime
 from dotenv import load_dotenv
 import os
 import json
 import time
 from datetime import datetime
 
-load_dotenv()
+from config_loader import load_config
+from command_runner import run_commands
+from snapshot_writer import write_snapshot
+from docker_logs import get_docker_logs
+from openai_integration import generate_cursorrules
 
-def load_config():
-    try:
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        config_file = os.path.join(script_dir, 'config.json')
-        with open(config_file, 'r') as f:
-            config = json.load(f)
-            
-            if 'tree' not in config or 'system_commands' not in config:
-                raise KeyError("Missing required keys in config.json")
-            
-            return config
-    except (FileNotFoundError, KeyError):
-        print("⚠️ config.json not found or invalid, using default settings")
-        return {
-            "tree": {
-                "max_depth": 3,
-                "ignore_patterns": ["venv", "__pycache__", "node_modules", "build", "public", "dist", ".git"],
-                "ignore_extensions": ["*.pyc", "*.pyo", "*.pyd", "*.so", "*.dll", "*.class"]
-            },
-            "system_commands": {
-                "disk_usage_threshold": 80
-            }
-        }
+load_dotenv()
 
 config = load_config()
 
@@ -69,100 +49,6 @@ def get_project_directories():
     except FileNotFoundError:
         print("❌ Error: containers-list.md not found in .cursorboost directory")
         return []
-
-def run_commands(commands_list, project_dir=None):
-    print(f"📊 Collecting {'project' if project_dir else 'system'} information...")
-    output = []
-    output.append(f"Timestamp: {datetime.utcnow().isoformat()}Z\n")
-    
-    if project_dir:
-        original_dir = os.getcwd()
-        base_project_path = config.get('base_project_path')
-        if not base_project_path or base_project_path == "<your_project_path>":
-            raise ValueError(
-                "❌ Error: 'base_project_path' is not defined or is still set to '<your_project_path>' in the configuration file (config.json). "
-                "Please update it to your project's root directory."
-            )
-        
-        project_path = os.path.join(os.path.expanduser(base_project_path), project_dir)
-        try:
-            os.chdir(project_path)
-            output.append(f"\n### Project: {project_dir} ###\n")
-        except FileNotFoundError:
-            print(f"  ❌ Project directory not found: {project_path}")
-            return ""
-
-    for command in commands_list:
-        print(f"  ⚡ Running: {command}")
-        try:
-            result = subprocess.check_output(command, shell=True, stderr=subprocess.STDOUT)
-            output.append(f"{command}:\n{result.decode('utf-8')}\n")
-        except subprocess.CalledProcessError as e:
-            print(f"  ❌ Failed: {command}")
-            output.append(f"{command} (FAILED):\n{e.output.decode('utf-8')}\n")
-    
-    if project_dir:
-        os.chdir(original_dir)
-    
-    return "\n".join(output)
-
-def write_snapshot(snapshot):
-    with open("snapshot.txt", "w") as f:
-        f.write(snapshot)
-
-import openai
-
-def generate_cursorrules(snapshot):
-    api_key = os.getenv('OPENAI_API_KEY')
-    if not api_key:
-        print("❌ Error: OPENAI_API_KEY not found in environment variables")
-        return None
-    
-    client = openai.OpenAI(api_key=api_key)
-    
-    response = client.chat.completions.create(
-        model="chatgpt-4o-latest",
-        messages=[
-            {"role": "system", "content": "You are a helpful assistant that injects a user's system information and parses out the most important details. Only respond with the complete file contents, without any additional explanation or commentary."},
-            {"role": "user", "content": f"You are a coding assistant optimizing text files for LLM-based applications. Using the following system snapshot, generate a text file that highlights the most relevant details for coding context. Only output the complete file contents, without explanations or extra text:\n\n{snapshot}"}
-        ],
-        temperature=1,
-    )
-    return response.choices[0].message.content
-
-def get_docker_logs():
-    try:
-        ignore_containers = config.get('docker', {}).get('ignore_containers', [])
-        
-        containers = subprocess.check_output(
-            "docker ps --format '{{.ID}} {{.Names}}'", 
-            shell=True
-        ).decode('utf-8').strip().split('\n')
-        
-        logs = []
-        for container in containers:
-            if not container:
-                continue
-                
-            container_id, container_name = container.split()
-            
-            if container_name in ignore_containers:
-                continue
-                
-            try:
-                container_logs = subprocess.check_output(
-                    f"docker logs --tail 25 {container_id}",
-                    shell=True
-                ).decode('utf-8')
-                
-                logs.append(f"\nDocker Logs for {container_name} ({container_id}):\n")
-                logs.append(container_logs)
-            except subprocess.CalledProcessError as e:
-                logs.append(f"\nError getting logs for {container_name}: {str(e)}\n")
-        
-        return "\n".join(logs)
-    except subprocess.CalledProcessError as e:
-        return "Error getting Docker container list"
 
 def write_cursorrules(cursorrules):
     project_description = ""

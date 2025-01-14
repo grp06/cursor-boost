@@ -106,3 +106,13 @@ Here’s an example of how your project directory might look:
 - **`.cursorrules`**: Generated at the root of your project directory.
 - **`snapshot.txt`**: Contains the latest system and project snapshots.
 
+## New Module Structure
+The `index.py` file has been refactored into smaller, more focused modules:
+
+- `config_loader.py`: Handles configuration loading and validation.
+- `command_runner.py`: Handles system and project command execution.
+- `snapshot_writer.py`: Handles writing snapshots to files.
+- `docker_logs.py`: Handles Docker log retrieval.
+- `openai_integration.py`: Handles OpenAI API interaction.
+
+Make sure to update your imports in `index.py` to use these new modules.
